@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #f5f5f5; color: #333; }
+  .container { max-width: 640px; margin: 0 auto; background: #fff; }
+  .header { background: #1a237e; color: #fff; padding: 24px 28px; }
+  .header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .header .subtitle { color: #b3b8e8; font-size: 13px; margin-top: 4px; }
+  .section { padding: 20px 28px; border-bottom: 1px solid #e8e8e8; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 14px; }
+  .metric-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+  .metric-label { color: #666; }
+  .metric-value { font-weight: 600; }
+  .metric-value.positive { color: #2E7D32; }
+  .metric-value.negative { color: #C62828; }
+  .verdict { display: inline-block; padding: 4px 14px; border-radius: 4px; font-weight: 700; font-size: 14px; color: #fff; margin-top: 8px; }
+  table.categories { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.categories th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #ddd; color: #666; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  table.categories td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+  table.categories td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.categories tr:hover { background: #fafafa; }
+  .alert { padding: 8px 12px; margin-bottom: 6px; border-radius: 4px; font-size: 13px; }
+  .alert-red { background: #FFEBEE; border-left: 4px solid #C62828; }
+  .alert-yellow { background: #FFF8E1; border-left: 4px solid #F57F17; }
+  .alert-info { background: #E3F2FD; border-left: 4px solid #1565C0; }
+  .alert .emoji { margin-right: 6px; }
+  .alert .type { font-weight: 600; }
+  .footer { padding: 16px 28px; font-size: 11px; color: #999; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Monday Money Brief</h1>
+    <div class="subtitle">Week of {{ week_start.strftime('%B %d') }} – {{ week_end.strftime('%B %d, %Y') }}</div>
+  </div>
+
+  <!-- WEEKLY SNAPSHOT -->
+  <div class="section">
+    <div class="section-title">Weekly Snapshot</div>
+    <div class="metric-row">
+      <span class="metric-label">Total spent this week</span>
+      <span class="metric-value">${{ "{:,.0f}".format(this_week_total) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Total spent last week</span>
+      <span class="metric-value">${{ "{:,.0f}".format(last_week_total) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Week-over-week change</span>
+      <span class="metric-value {% if wow_delta > 0 %}negative{% elif wow_delta < 0 %}positive{% endif %}">
+        {{ "{:+.0f}".format(wow_delta) }}% {{ "↑" if wow_delta > 0 else "↓" if wow_delta < 0 else "→" }}
+      </span>
+    </div>
+    <div style="border-top: 1px solid #eee; margin-top: 10px; padding-top: 10px;">
+    <div class="metric-row">
+      <span class="metric-label">Month-to-date spending</span>
+      <span class="metric-value">${{ "{:,.0f}".format(mtd_spending) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Same point last month</span>
+      <span class="metric-value">${{ "{:,.0f}".format(prev_mtd) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">MoM pace change</span>
+      <span class="metric-value {% if mom_delta > 10 %}negative{% elif mom_delta < -10 %}positive{% endif %}">
+        {{ "{:+.0f}".format(mom_delta) }}%
+      </span>
+    </div>
+    </div>
+  </div>
+
+  <!-- CASH FLOW CHECK -->
+  <div class="section">
+    <div class="section-title">Cash Flow Check</div>
+    <div class="metric-row">
+      <span class="metric-label">{{ current_month_name }} income (received)</span>
+      <span class="metric-value">${{ "{:,.0f}".format(mtd_income) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">{{ current_month_name }} spending (so far)</span>
+      <span class="metric-value">${{ "{:,.0f}".format(mtd_spending) }}</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Projected month-end surplus</span>
+      <span class="metric-value {% if projected_surplus >= 0 %}positive{% else %}negative{% endif %}">
+        ${{ "{:,.0f}".format(projected_surplus) }}
+      </span>
+    </div>
+    <div style="margin-top: 10px;">
+      <span class="verdict" style="background: {{ verdict_color }};">{{ verdict }}</span>
+    </div>
+  </div>
+
+  <!-- SPENDING BY CATEGORY -->
+  {% if categories %}
+  <div class="section">
+    <div class="section-title">Spending by Category (this week)</div>
+    <table class="categories">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th style="text-align:right">This Week</th>
+          <th style="text-align:right">MTD</th>
+          <th style="text-align:right">Last Month</th>
+          <th style="text-align:center">Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in categories %}
+        <tr>
+          <td>{{ cat.name }}</td>
+          <td class="num">${{ "{:,.0f}".format(cat.this_week) }}</td>
+          <td class="num">${{ "{:,.0f}".format(cat.mtd) }}</td>
+          <td class="num">${{ "{:,.0f}".format(cat.last_month) }}</td>
+          <td style="text-align:center">{{ cat.trend }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ALERTS -->
+  {% if alerts %}
+  <div class="section">
+    <div class="section-title">⚠️ Alerts &amp; Anomalies</div>
+    {% for alert in alerts %}
+    <div class="alert {% if alert.severity == 3 %}alert-red{% elif alert.severity == 2 %}alert-yellow{% else %}alert-info{% endif %}">
+      <span class="emoji">{{ alert.emoji }}</span>
+      <span class="type">{{ alert.alert_type }}:</span>
+      {{ alert.message }}
+      {% if alert.details %}<br><small style="color:#888;">{{ alert.details }}</small>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- MARKET & PORTFOLIO -->
+  {% if portfolio %}
+  <div class="section">
+    <div class="section-title">📊 Market &amp; Portfolio</div>
+
+    {% if portfolio.market_summary %}
+    <div style="margin-bottom: 12px;">
+      <strong style="font-size:12px; color:#666;">Market this week:</strong>
+      {% for idx in portfolio.market_summary %}
+      <div class="metric-row">
+        <span class="metric-label">{{ idx.name }}</span>
+        <span class="metric-value">
+          {{ "{:,.0f}".format(idx.price) if idx.price > 100 else "{:.2f}".format(idx.price) }}
+          <span style="color: {{ '#2E7D32' if idx.change_pct >= 0 else '#C62828' }}; font-size:12px;">
+            ({{ "{:+.1f}".format(idx.change_pct) }}%)
+          </span>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div style="border-top: 1px solid #eee; padding-top: 10px; margin-bottom: 10px;">
+      <strong style="font-size:12px; color:#666;">Your portfolio:</strong>
+      <div class="metric-row">
+        <span class="metric-label">Total value</span>
+        <span class="metric-value">${{ "{:,.0f}".format(portfolio.summary.total_value) }}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Total return</span>
+        <span class="metric-value {% if portfolio.summary.total_return_pct >= 0 %}positive{% else %}negative{% endif %}">
+          {{ "{:+.1f}".format(portfolio.summary.total_return_pct) }}%
+        </span>
+      </div>
+      {% if portfolio.performance.spy_return_pct %}
+      <div class="metric-row">
+        <span class="metric-label">vs S&amp;P 500</span>
+        <span class="metric-value">Alpha: {{ "{:+.1f}".format(portfolio.performance.alpha) }}%</span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if portfolio.movers.gainers %}
+    <div style="border-top: 1px solid #eee; padding-top: 8px; font-size: 13px;">
+      <strong style="color:#666;">Top movers:</strong>
+      {% for m in portfolio.movers.gainers[:3] %}
+      <span style="color: {{ '#2E7D32' if m.day_change_pct >= 0 else '#C62828' }};">
+        {{ m.ticker }} {{ "{:+.1f}".format(m.day_change_pct) }}%
+      </span>{{ " | " if not loop.last else "" }}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if portfolio.concentration_alerts %}
+    <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px;">
+      {% for a in portfolio.concentration_alerts %}
+      <div class="alert alert-yellow" style="margin-top:4px;">
+        ⚠️ {{ a.ticker }} is {{ "{:.0f}".format(a.weight_pct) }}% of portfolio — consider rebalancing
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px;">
+      <div class="metric-row">
+        <span class="metric-label">IRA Progress</span>
+        <span class="metric-value">${{ "{:,.0f}".format(portfolio.ira.ytd_contributions) }} / ${{ "{:,}".format(portfolio.ira.annual_limit) }} ({{ "{:.0f}".format(portfolio.ira.pct_complete) }}%)</span>
+      </div>
+      {% if portfolio.ira.monthly_needed > 0 %}
+      <div style="font-size:12px; color:#888; padding-left:4px;">
+        Need ${{ "{:,.0f}".format(portfolio.ira.monthly_needed) }}/mo to max by December
+      </div>
+      {% endif %}
+    </div>
+
+    {% if portfolio.strategy_note %}
+    <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px; font-size: 13px; color: #444; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+      <strong>Strategy:</strong> {{ portfolio.strategy_note }}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ALLOCATIONS -->
+  <div class="section">
+    <div class="section-title">Allocations &amp; Debt Payoff</div>
+    {% for name, total in allocations.items() %}
+    <div class="metric-row">
+      <span class="metric-label">{{ name }} this month</span>
+      <span class="metric-value">${{ "{:,.0f}".format(total) }}</span>
+    </div>
+    {% endfor %}
+    {% if allocations|length == 0 %}
+    <div class="metric-row">
+      <span class="metric-label" style="color:#999;">No allocations recorded this month</span>
+    </div>
+    {% endif %}
+    <div class="metric-row" style="border-top: 1px solid #eee; margin-top: 6px; padding-top: 6px;">
+      <span class="metric-label">IRA contributions YTD</span>
+      <span class="metric-value">${{ "{:,.0f}".format(ira_ytd) }} / $7,000</span>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    Generated by SpendSense<br>
+    Data synced from SimpleFIN · {{ week_end.strftime('%B %d, %Y') }}
+  </div>
+
+</div>
+</body>
+</html>

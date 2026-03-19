@@ -1,0 +1,31 @@
+# Secrets
+.env
+
+# Real financial data — NEVER commit
+data/
+logs/
+*.db
+*.db-shm
+*.db-wal
+*.xlsx
+
+# Local config (user copies from .example files)
+config/settings.py
+config/portfolio_config.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
