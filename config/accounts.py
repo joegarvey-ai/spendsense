@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-# Account mapping: SimpleFIN account ID → friendly name + type
-# This gets populated after first sync. Update manually after running `cli.py status`.
-# CUSTOMIZE: Replace with your own SimpleFIN account IDs and friendly names.
-ACCOUNT_MAP = {
-    # "sfin-id-here": {"name": "Primary Checking", "type": "checking"},
-    # "sfin-id-here": {"name": "Savings", "type": "savings"},
-    # "sfin-id-here": {"name": "Rewards Card (1234)", "type": "credit_card"},
-    # "sfin-id-here": {"name": "Travel Card (5678)", "type": "credit_card"},
-}
+# Import the account map from settings.py (user-configured).
+# ACCOUNT_MAP must be defined in settings.py with your SimpleFIN account IDs.
+# See settings.example.py for the format.
+from config.settings import ACCOUNT_MAP
 
 
 def get_friendly_name(account_id: str) -> str | None:

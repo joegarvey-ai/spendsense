@@ -124,6 +124,144 @@ def test_override():
         conn.close()
 
 
+# ─── Double-count detection tests ───
+
+
+def _setup_double_count_db(tmpdir):
+    """Helper: create a DB with two accounts and transactions that could double-count."""
+    db_path = Path(tmpdir) / "test.db"
+    init_db(db_path)
+    conn = get_connection(db_path)
+
+    # Two accounts: checking + credit card
+    conn.execute(
+        "INSERT INTO accounts (id, institution, name, friendly_name, account_type) "
+        "VALUES ('CHECKING', 'My Credit Union', 'Checking', 'My Checking', 'checking')"
+    )
+    conn.execute(
+        "INSERT INTO accounts (id, institution, name, friendly_name, account_type) "
+        "VALUES ('CC', 'Card Issuer', 'Rewards Card', 'My CC', 'credit_card')"
+    )
+    conn.commit()
+    return db_path, conn
+
+
+def test_double_count_detects_both_sides_spending():
+    """When both sides of a same-amount pair are NOT Transfer, flag as double-count."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, conn = _setup_double_count_db(tmpdir)
+
+        # Same amount, same date, different accounts, BOTH categorized as spending
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '2026-03-15', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+        )
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '2026-03-15', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+        )
+        conn.commit()
+
+        from src.sync import check_double_counts
+        findings = check_double_counts(conn, days_back=30)
+        assert len(findings) == 1
+        conn.close()
+
+
+def test_double_count_ignores_transfer_pairs():
+    """When one side is Transfer, it should NOT be flagged as critical."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, conn = _setup_double_count_db(tmpdir)
+
+        # CC payment: checking side = Transfer, CC side = Transfer
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '2026-03-15', -500.0, 'CAPITAL ONE PAYMENT', 0, 'Transfer', 'CC Payment', '2026-03')"""
+        )
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '2026-03-15', 500.0, 'PAYMENT THANK YOU', 0, 'Transfer', 'CC Payment', '2026-03')"""
+        )
+        conn.commit()
+
+        from src.sync import check_double_counts
+        findings = check_double_counts(conn, days_back=30)
+        assert len(findings) == 0
+        conn.close()
+
+
+def test_double_count_ignores_transfer_allocation_pair():
+    """Bank→brokerage transfer pair (Transfer + Allocation) should NOT be critical."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, conn = _setup_double_count_db(tmpdir)
+
+        # Add investment account
+        conn.execute(
+            "INSERT INTO accounts (id, institution, name, friendly_name, account_type) "
+            "VALUES ('INVEST', 'Brokerage', 'Individual', 'My Brokerage', 'investment')"
+        )
+
+        # Bank side = Transfer, brokerage side = Allocation (expected by design)
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '2026-03-15', -150.0, 'ROBINHOOD TRANSFER', 0, 'Transfer', 'Investment Transfer', '2026-03')"""
+        )
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'INVEST', '2026-03-15', 150.0, 'ACH deposit of $150', 0, 'Allocation', 'Investments', '2026-03')"""
+        )
+        conn.commit()
+
+        from src.sync import check_double_counts
+        findings = check_double_counts(conn, days_back=30)
+        assert len(findings) == 0  # One side is Transfer, so not critical
+        conn.close()
+
+
+def test_double_count_respects_date_window():
+    """Pairs with dates >3 days apart should NOT be flagged."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, conn = _setup_double_count_db(tmpdir)
+
+        # Same amount but 5 days apart — not a pair
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '2026-03-10', -100.0, 'PURCHASE A', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+        )
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '2026-03-16', -100.0, 'PURCHASE B', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+        )
+        conn.commit()
+
+        from src.sync import check_double_counts
+        findings = check_double_counts(conn, days_back=30)
+        assert len(findings) == 0
+        conn.close()
+
+
+def test_double_count_same_account_ignored():
+    """Two transactions on the SAME account should NOT be flagged."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path, conn = _setup_double_count_db(tmpdir)
+
+        # Same account, same amount, same date — not a double-count (just two purchases)
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CC', '2026-03-15', -25.0, 'STARBUCKS', 0, 'Non-Essential', 'Dining Out', '2026-03')"""
+        )
+        conn.execute(
+            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '2026-03-15', -25.0, 'DIFFERENT COFFEE SHOP', 0, 'Non-Essential', 'Dining Out', '2026-03')"""
+        )
+        conn.commit()
+
+        from src.sync import check_double_counts
+        findings = check_double_counts(conn, days_back=30)
+        assert len(findings) == 0
+        conn.close()
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

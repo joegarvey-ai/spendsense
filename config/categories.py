@@ -22,6 +22,58 @@ HOW TO CUSTOMIZE:
     4. Re-run `python -m src.cli recategorize` after editing to re-classify all transactions.
 """
 
+# ─── Double-Count Prevention: CC & Investment Company Patterns ───
+# When a BANK account (checking/savings) has a transaction whose description matches
+# one of these patterns AND the amount is negative (outgoing), the categorizer will
+# automatically classify it as Transfer/CC Payment — even if no specific rule in RULES
+# matches. This prevents the same money movement from being counted as both a CC payment
+# debit AND the individual purchases on the card.
+#
+# The credit-card side (payment received) is typically handled by existing RULES patterns
+# like "MOBILE PAYMENT.*THANK YOU" or "ACH Deposit.*Internet transfer from account ending".
+#
+# CUSTOMIZE: Add patterns for YOUR credit card companies. These are case-insensitive.
+# Each entry needs a regex "pattern" and a "vendor" display name.
+CC_COMPANY_PATTERNS = [
+    # Capital One variants
+    {"pattern": r"capital\s*one|cap\s*one|capitalone|capital\s+one\s+n\.?a\.?",
+     "vendor": "Capital One"},
+    # American Express variants
+    {"pattern": r"\bamex\b|american\s*express|americanexpress",
+     "vendor": "AMEX"},
+    # Apple Card / Goldman Sachs variants
+    {"pattern": r"apple\s*card|apple\s*goldman|applecard\s*gsbank",
+     "vendor": "Apple Card"},
+    # Bank of America variants
+    {"pattern": r"bank\s+of\s+america|bk\s+of\s+amer|b\s*of\s*a\b|bofa\b",
+     "vendor": "Bank of America"},
+    # Affirm BNPL payment (not affirm.com charges, which are the installment itself)
+    {"pattern": r"\baffirm\b(?!\.com)", "vendor": "Affirm"},
+    # Add your credit card companies here:
+    # {"pattern": r"chase|jpmorgan", "vendor": "Chase"},
+    # {"pattern": r"discover", "vendor": "Discover"},
+    # {"pattern": r"citi\b|citibank", "vendor": "Citi"},
+    # {"pattern": r"wells\s*fargo", "vendor": "Wells Fargo"},
+    # {"pattern": r"usaa", "vendor": "USAA"},
+]
+
+# When a BANK account has a transaction matching these patterns, it's categorized as
+# Transfer/Investment Transfer instead of Allocation/Investments. This prevents
+# double-counting when you also pull transactions from the brokerage itself (where
+# the deposit appears as Allocation/Investments).
+#
+# CUSTOMIZE: Add patterns for YOUR brokerage(s).
+INVESTMENT_COMPANY_PATTERNS = [
+    {"pattern": r"\brobinhood\b", "vendor": "Robinhood"},
+    # Add your brokerages here:
+    # {"pattern": r"\bschwab\b|charles\s*schwab", "vendor": "Schwab"},
+    # {"pattern": r"\bfidelity\b", "vendor": "Fidelity"},
+    # {"pattern": r"\bvanguard\b", "vendor": "Vanguard"},
+    # {"pattern": r"\betrade\b|e\*trade", "vendor": "E*TRADE"},
+    # {"pattern": r"\bwealthfront\b", "vendor": "Wealthfront"},
+    # {"pattern": r"\bbetterment\b", "vendor": "Betterment"},
+]
+
 RULES = [
     # ─── Credit Card Payments & Internal Transfers (exclude from spending) ───
     # These prevent double-counting: the CC payment from checking + the charges on the card.
