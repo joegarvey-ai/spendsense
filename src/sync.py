@@ -1,7 +1,7 @@
 """Orchestrator: pull transactions from SimpleFIN → categorize → store → dedup."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from config.accounts import get_account_type, get_friendly_name
@@ -23,6 +23,88 @@ from src.simplefin_client import SimpleFINClient
 logger = logging.getLogger(__name__)
 
 
+def check_double_counts(conn, days_back: int = 90) -> list[dict]:
+    """Scan for potential double-counted transactions.
+
+    Finds transaction pairs where:
+    - Same absolute amount (within $0.01)
+    - Same or adjacent date (±3 days)
+    - Different accounts
+    - Both sides are NOT categorized as Transfer (i.e., both count toward spending)
+
+    Pairs where one side is Transfer are expected (e.g., a bank-to-brokerage transfer
+    where the bank side is Transfer/Investment Transfer and the brokerage side is
+    Allocation/Investments). These are logged at DEBUG level for informational purposes.
+
+    Args:
+        conn: SQLite connection.
+        days_back: How far back to scan (default 90 days).
+
+    Returns:
+        List of dicts describing critical double-counts (both sides non-Transfer).
+    """
+    cutoff = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    rows = conn.execute(
+        """SELECT t1.id AS id1, t1.account_id AS acct1, t1.posted_at AS date1,
+                  t1.amount AS amt1, t1.description AS desc1,
+                  t1.tier1 AS tier1_1, t1.tier2 AS tier2_1,
+                  a1.friendly_name AS name1,
+                  t2.id AS id2, t2.account_id AS acct2, t2.posted_at AS date2,
+                  t2.amount AS amt2, t2.description AS desc2,
+                  t2.tier1 AS tier1_2, t2.tier2 AS tier2_2,
+                  a2.friendly_name AS name2
+           FROM transactions t1
+           JOIN transactions t2 ON t1.id < t2.id
+           LEFT JOIN accounts a1 ON t1.account_id = a1.id
+           LEFT JOIN accounts a2 ON t2.account_id = a2.id
+           WHERE ABS(ABS(t1.amount) - ABS(t2.amount)) < 0.01
+             AND t1.account_id != t2.account_id
+             AND ABS(julianday(t1.posted_at) - julianday(t2.posted_at)) <= 3
+             AND (t1.tier1 != 'Transfer' OR t2.tier1 != 'Transfer')
+             AND t1.posted_at >= ?
+           ORDER BY t1.posted_at DESC""",
+        (cutoff,),
+    ).fetchall()
+
+    critical = []  # Both sides non-Transfer = real double-count
+    info = []      # One side Transfer, one not = expected (e.g., bank→brokerage)
+
+    for r in rows:
+        entry = {
+            "date1": r["date1"], "amt1": r["amt1"], "desc1": r["desc1"],
+            "cat1": f"{r['tier1_1']}/{r['tier2_1']}", "acct1": r["name1"] or r["acct1"],
+            "date2": r["date2"], "amt2": r["amt2"], "desc2": r["desc2"],
+            "cat2": f"{r['tier1_2']}/{r['tier2_2']}", "acct2": r["name2"] or r["acct2"],
+            "id1": r["id1"], "id2": r["id2"],
+        }
+        if r["tier1_1"] != "Transfer" and r["tier1_2"] != "Transfer":
+            critical.append(entry)
+        else:
+            info.append(entry)
+
+    if critical:
+        logger.warning(
+            "DOUBLE-COUNT ALERT: %d transaction pair(s) where BOTH sides are spending (not Transfer):",
+            len(critical),
+        )
+        for f in critical:
+            logger.warning(
+                "  %s $%.2f [%s] %s (%s) <-> %s $%.2f [%s] %s (%s)",
+                f["date1"], f["amt1"], f["cat1"], f["desc1"][:40], f["acct1"],
+                f["date2"], f["amt2"], f["cat2"], f["desc2"][:40], f["acct2"],
+            )
+    else:
+        logger.info("Double-count check: CLEAN — no double-counted spending pairs found.")
+
+    if info:
+        logger.debug(
+            "Double-count info: %d pair(s) with one Transfer side (expected, e.g. bank→brokerage).",
+            len(info),
+        )
+
+    return critical
+
+
 def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
     """Run the full daily sync pipeline.
 
@@ -32,7 +114,8 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
     4. Upsert into SQLite
     5. Snapshot account balances
     6. Update Excel dashboard
-    7. Log sync results
+    7. Post-sync double-count detection
+    8. Log sync results
 
     Args:
         days_back: Number of days of history to fetch.
@@ -90,6 +173,11 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
                 )
                 snapshot_balance(conn, acct["id"], balance, avail, today)
 
+        # Build account_type lookup for double-count prevention
+        account_type_map = {}
+        for row in conn.execute("SELECT id, account_type FROM accounts").fetchall():
+            account_type_map[row["id"]] = row["account_type"]
+
         # Process each transaction
         for raw_txn in raw_transactions:
             txn_id = raw_txn["id"]
@@ -112,7 +200,8 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
                 }
                 auto = 0
             else:
-                category = categorizer.categorize(raw_txn["description"], amount)
+                acct_type = account_type_map.get(raw_txn["account_id"])
+                category = categorizer.categorize(raw_txn["description"], amount, account_type=acct_type)
                 auto = 1
 
             txn_record = {
@@ -170,6 +259,11 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
                 logger.info("Portfolio prices and benchmarks refreshed")
         except Exception as e:
             logger.warning("Portfolio refresh skipped: %s", e)
+
+        # Post-sync double-count detection
+        double_counts = check_double_counts(conn, days_back=max(days_back, 90))
+        if double_counts:
+            errors.append(f"WARNING: {len(double_counts)} potential double-count(s) detected")
 
         # Log success
         complete_sync_log(conn, log_id, fetched, new_count, updated_count, errors or None, "success")

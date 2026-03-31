@@ -4,7 +4,12 @@ from __future__ import annotations
 import logging
 import re
 
-from config.categories import DEFAULT_CATEGORY, RULES
+from config.categories import (
+    CC_COMPANY_PATTERNS,
+    DEFAULT_CATEGORY,
+    INVESTMENT_COMPANY_PATTERNS,
+    RULES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,23 +30,43 @@ class TransactionCategorizer:
                 "amount_match": rule.get("amount_match"),
             })
 
-    def categorize(self, description: str, amount: float = 0.0) -> dict:
+        # Pre-compile CC and investment company patterns for double-count prevention
+        self._cc_patterns = [
+            {"regex": re.compile(p["pattern"], re.IGNORECASE), "vendor": p["vendor"]}
+            for p in CC_COMPANY_PATTERNS
+        ]
+        self._investment_patterns = [
+            {"regex": re.compile(p["pattern"], re.IGNORECASE), "vendor": p["vendor"]}
+            for p in INVESTMENT_COMPANY_PATTERNS
+        ]
+
+    def categorize(self, description: str, amount: float = 0.0, account_type: str = None) -> dict:
         """Categorize a transaction by its description.
 
         Args:
             description: Raw merchant description from bank.
             amount: Transaction amount (negative=debit, positive=credit).
+            account_type: Account type (checking, savings, credit_card, investment, etc.).
+                When provided, enables account-aware double-count prevention:
+                bank accounts with CC company names → Transfer/CC Payment,
+                bank accounts with brokerage names → Transfer/Investment Transfer.
 
         Returns:
             Dict with keys: tier1, tier2, vendor.
         """
+        # Double-count prevention: detect inter-account transfers by account context
+        if account_type:
+            transfer = self._check_transfer_pattern(description, amount, account_type)
+            if transfer:
+                return transfer
+
         for rule in self._compiled:
             if rule["regex"].search(description):
                 tier1 = rule["tier1"]
                 tier2 = rule["tier2"]
                 vendor = rule["vendor"]
 
-                # Check amount-based override (e.g., Venmo -$40 → Fixed/T-Mobile)
+                # Check amount-based override (e.g., Venmo -$40 → Fixed/Cell Phone)
                 am = rule["amount_match"]
                 if am and "exact" in am and amount == am["exact"]:
                     tier1 = am["override_tier1"]
@@ -72,7 +97,10 @@ class TransactionCategorizer:
 
         overrides = get_overrides(conn)
         rows = conn.execute(
-            "SELECT id, description, amount FROM transactions WHERE auto_categorized = 1"
+            """SELECT t.id, t.description, t.amount, t.account_id, a.account_type
+               FROM transactions t
+               LEFT JOIN accounts a ON t.account_id = a.id
+               WHERE t.auto_categorized = 1"""
         ).fetchall()
 
         updated = 0
@@ -83,7 +111,7 @@ class TransactionCategorizer:
                 skipped += 1
                 continue
 
-            result = self.categorize(row["description"], row["amount"])
+            result = self.categorize(row["description"], row["amount"], row["account_type"])
             conn.execute(
                 """UPDATE transactions SET
                        tier1 = ?, tier2 = ?, vendor = ?,
@@ -96,6 +124,33 @@ class TransactionCategorizer:
         conn.commit()
         logger.info("Recategorized %d transactions (%d skipped as overrides)", updated, skipped)
         return {"updated": updated, "skipped": skipped}
+
+    def _check_transfer_pattern(self, description: str, amount: float, account_type: str) -> dict | None:
+        """Detect inter-account transfers to prevent double-counting.
+
+        This runs BEFORE the normal RULES matching. It catches cases where a bank
+        account shows a transaction to/from a credit card company or brokerage,
+        which should always be Transfer — not spending or allocation.
+
+        Rules applied:
+        - Bank account + CC company name + outgoing (negative) → Transfer/CC Payment
+        - Bank account + investment company name → Transfer/Investment Transfer
+        """
+        is_bank = account_type in ("checking", "savings")
+
+        # CC payments: bank-side outgoing to a credit card company
+        if is_bank and amount < 0:
+            for pat in self._cc_patterns:
+                if pat["regex"].search(description):
+                    return {"tier1": "Transfer", "tier2": "CC Payment", "vendor": pat["vendor"]}
+
+        # Investment transfers: any bank-side transaction involving an investment company
+        if is_bank:
+            for pat in self._investment_patterns:
+                if pat["regex"].search(description):
+                    return {"tier1": "Transfer", "tier2": "Investment Transfer", "vendor": pat["vendor"]}
+
+        return None
 
     @staticmethod
     def _clean_vendor(description: str) -> str:
