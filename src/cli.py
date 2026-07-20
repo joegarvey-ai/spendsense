@@ -214,7 +214,7 @@ def override(txn_id, tier1, tier2, vendor, reason):
     """Apply a manual category override to a transaction."""
     init_db()
     conn = get_connection()
-    apply_override(conn, txn_id, tier1, tier2, vendor, reason)
+    apply_override(conn, txn_id, tier1, tier2, vendor=vendor, reason=reason)
     conn.close()
     click.echo(f"Override applied: {txn_id} → {tier1} / {tier2}")
 

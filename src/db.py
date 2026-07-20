@@ -216,6 +216,7 @@ def apply_override(
     txn_id: str,
     tier1: str,
     tier2: str,
+    *,
     vendor: str | None = None,
     reason: str | None = None,
 ) -> None:
