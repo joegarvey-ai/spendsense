@@ -94,6 +94,10 @@ def get_connection(db_path: Path = None) -> sqlite3.Connection:
     """Get a SQLite connection with row factory enabled."""
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
