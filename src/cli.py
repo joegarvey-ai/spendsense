@@ -214,7 +214,7 @@ def override(txn_id, tier1, tier2, vendor, reason):
     """Apply a manual category override to a transaction."""
     init_db()
     conn = get_connection()
-    apply_override(conn, txn_id, tier1, tier2, vendor, reason)
+    apply_override(conn, txn_id, tier1, tier2, vendor=vendor, reason=reason)
     conn.close()
     click.echo(f"Override applied: {txn_id} → {tier1} / {tier2}")
 
@@ -358,6 +358,10 @@ def digest(week_end, preview):
         # Save HTML previews to logs/
         log_dir = Path(__file__).parent.parent / "logs"
         log_dir.mkdir(exist_ok=True)
+        try:
+            log_dir.chmod(0o700)
+        except OSError:
+            pass
         for who in ["primary", "secondary"]:
             path = log_dir / f"digest_preview_{who}.html"
             path.write_text(result[who]["html"])

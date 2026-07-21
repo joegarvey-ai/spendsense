@@ -4,10 +4,11 @@ Usage:
     python scripts/setup_simplefin.py
 
 You'll be prompted to paste your Setup Token from https://beta-bridge.simplefin.org.
-The script will claim it and output the credentials to add to .env.
+The script will claim it and write the credentials to .env.
 """
 
 import base64
+import os
 import sys
 from pathlib import Path
 
@@ -63,10 +64,9 @@ def main():
         print(f"Raw access URL: {access_url}")
         sys.exit(1)
 
-    print("\nSuccess! Add these to your .env file:\n")
-    print(f"SIMPLEFIN_USERNAME={username}")
-    print(f"SIMPLEFIN_PASSWORD={password}")
+    print("\nSuccess! Credentials obtained.")
     print(f"SIMPLEFIN_BASE_URL={base_url}")
+    print("(Username and password will be written to .env — not displayed for security.)")
 
     # Offer to write to .env
     env_path = Path(__file__).parent.parent / ".env"
@@ -80,9 +80,13 @@ def main():
         with open(env_path, "a") as f:
             f.write("\n# SimpleFIN credentials (auto-generated)\n")
             f.writelines(lines)
-        print(f"Credentials written to {env_path}")
+        os.chmod(env_path, 0o600)
+        print(f"Credentials written to {env_path} (permissions set to 600)")
     else:
-        print("Skipped writing .env. Copy the values above manually.")
+        print("\nCopy these now — they will not be shown again:")
+        print(f"SIMPLEFIN_USERNAME={username}")
+        print(f"SIMPLEFIN_PASSWORD={password}")
+        print(f"SIMPLEFIN_BASE_URL={base_url}")
 
 
 if __name__ == "__main__":

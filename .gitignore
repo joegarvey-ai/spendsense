@@ -1,5 +1,7 @@
 # Secrets
 .env
+.env.*
+.env~
 
 # Real financial data — NEVER commit
 data/
@@ -8,6 +10,9 @@ logs/
 *.db-shm
 *.db-wal
 *.xlsx
+*.csv
+*.bak
+*.tmp
 
 # Local config (user copies from .example files)
 config/settings.py

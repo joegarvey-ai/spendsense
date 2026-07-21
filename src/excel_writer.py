@@ -536,7 +536,7 @@ def read_overrides_from_excel(
             logger.warning("Override row %d missing txn_id/tier1/tier2 — skipping", row)
             continue
 
-        apply_override(conn, str(txn_id), str(tier1), str(tier2), str(reason or "Excel override"))
+        apply_override(conn, str(txn_id), str(tier1), str(tier2), reason=str(reason or "Excel override"))
         applied += 1
         logger.info("Applied Excel override: %s → %s / %s", txn_id[:40], tier1, tier2)
 

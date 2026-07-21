@@ -1,0 +1,5 @@
+# Dev/test dependencies for SpendSense
+-r requirements.txt
+iniconfig==2.3.0
+pluggy==1.6.0
+pytest==9.1.1
