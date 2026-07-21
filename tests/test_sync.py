@@ -1,12 +1,10 @@
 """Tests for the sync pipeline using mocked SimpleFIN responses."""
 
 import sqlite3
-import sys
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.db import get_connection, get_transaction_count, init_db
 
@@ -126,6 +124,13 @@ def test_override():
 
 # ─── Double-count detection tests ───
 
+# Use recent dates so tests don't rot as the calendar advances
+_TODAY = date.today().isoformat()
+_YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
+_FIVE_DAYS_AGO = (date.today() - timedelta(days=5)).isoformat()
+_TEN_DAYS_AGO = (date.today() - timedelta(days=10)).isoformat()
+_MONTH = date.today().strftime("%Y-%m")
+
 
 def _setup_double_count_db(tmpdir):
     """Helper: create a DB with two accounts and transactions that could double-count."""
@@ -153,12 +158,12 @@ def test_double_count_detects_both_sides_spending():
 
         # Same amount, same date, different accounts, BOTH categorized as spending
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T1', 'CHECKING', '2026-03-15', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '{_YESTERDAY}', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '{_MONTH}')"""
         )
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T2', 'CC', '2026-03-15', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '{_YESTERDAY}', -100.0, 'STORE PURCHASE', 0, 'Non-Essential', 'Shopping', '{_MONTH}')"""
         )
         conn.commit()
 
@@ -175,12 +180,12 @@ def test_double_count_ignores_transfer_pairs():
 
         # CC payment: checking side = Transfer, CC side = Transfer
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T1', 'CHECKING', '2026-03-15', -500.0, 'CAPITAL ONE PAYMENT', 0, 'Transfer', 'CC Payment', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '{_YESTERDAY}', -500.0, 'CAPITAL ONE PAYMENT', 0, 'Transfer', 'CC Payment', '{_MONTH}')"""
         )
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T2', 'CC', '2026-03-15', 500.0, 'PAYMENT THANK YOU', 0, 'Transfer', 'CC Payment', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '{_YESTERDAY}', 500.0, 'PAYMENT THANK YOU', 0, 'Transfer', 'CC Payment', '{_MONTH}')"""
         )
         conn.commit()
 
@@ -191,7 +196,7 @@ def test_double_count_ignores_transfer_pairs():
 
 
 def test_double_count_ignores_transfer_allocation_pair():
-    """Bank→brokerage transfer pair (Transfer + Allocation) should NOT be critical."""
+    """Bank to brokerage transfer pair (Transfer + Allocation) should NOT be critical."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path, conn = _setup_double_count_db(tmpdir)
 
@@ -203,12 +208,12 @@ def test_double_count_ignores_transfer_allocation_pair():
 
         # Bank side = Transfer, brokerage side = Allocation (expected by design)
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T1', 'CHECKING', '2026-03-15', -150.0, 'ROBINHOOD TRANSFER', 0, 'Transfer', 'Investment Transfer', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '{_YESTERDAY}', -150.0, 'ROBINHOOD TRANSFER', 0, 'Transfer', 'Investment Transfer', '{_MONTH}')"""
         )
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T2', 'INVEST', '2026-03-15', 150.0, 'ACH deposit of $150', 0, 'Allocation', 'Investments', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'INVEST', '{_YESTERDAY}', 150.0, 'ACH deposit of $150', 0, 'Allocation', 'Investments', '{_MONTH}')"""
         )
         conn.commit()
 
@@ -223,14 +228,14 @@ def test_double_count_respects_date_window():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path, conn = _setup_double_count_db(tmpdir)
 
-        # Same amount but 5 days apart — not a pair
+        # Same amount but 5 days apart (not within the 3-day pairing window)
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T1', 'CHECKING', '2026-03-10', -100.0, 'PURCHASE A', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CHECKING', '{_TEN_DAYS_AGO}', -100.0, 'PURCHASE A', 0, 'Non-Essential', 'Shopping', '{_MONTH}')"""
         )
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T2', 'CC', '2026-03-16', -100.0, 'PURCHASE B', 0, 'Non-Essential', 'Shopping', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '{_FIVE_DAYS_AGO}', -100.0, 'PURCHASE B', 0, 'Non-Essential', 'Shopping', '{_MONTH}')"""
         )
         conn.commit()
 
@@ -245,14 +250,14 @@ def test_double_count_same_account_ignored():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path, conn = _setup_double_count_db(tmpdir)
 
-        # Same account, same amount, same date — not a double-count (just two purchases)
+        # Same account, same amount, same date but same account = not a double-count
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T1', 'CC', '2026-03-15', -25.0, 'STARBUCKS', 0, 'Non-Essential', 'Dining Out', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T1', 'CC', '{_YESTERDAY}', -25.0, 'STARBUCKS', 0, 'Non-Essential', 'Dining Out', '{_MONTH}')"""
         )
         conn.execute(
-            """INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
-               VALUES ('T2', 'CC', '2026-03-15', -25.0, 'DIFFERENT COFFEE SHOP', 0, 'Non-Essential', 'Dining Out', '2026-03')"""
+            f"""INSERT INTO transactions (id, account_id, posted_at, amount, description, pending, tier1, tier2, month)
+               VALUES ('T2', 'CC', '{_YESTERDAY}', -25.0, 'DIFFERENT COFFEE SHOP', 0, 'Non-Essential', 'Dining Out', '{_MONTH}')"""
         )
         conn.commit()
 

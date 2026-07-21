@@ -1,12 +1,9 @@
 """Tests for the SimpleFIN client (using mocked responses)."""
 
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.simplefin_client import SimpleFINClient
 

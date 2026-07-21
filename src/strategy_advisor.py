@@ -7,19 +7,7 @@ import math
 import sqlite3
 from datetime import date
 
-from config.portfolio_config import (
-    CAR_BALANCE,
-    CAR_LOAN_RATE,
-    CAR_MONTHLY,
-    CAR_TERM_REMAINING,
-    IRA_ANNUAL_LIMIT,
-    IRA_ACCOUNT,
-    MORTGAGE_BALANCE,
-    MORTGAGE_MONTHLY,
-    MORTGAGE_RATE,
-    MORTGAGE_TERM_REMAINING,
-    ASSUMED_MARKET_RETURN,
-)
+from config.loader import portfolio_config
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +31,7 @@ class StrategyAdvisor:
         Returns both the math-optimal and "sleep well" recommendations.
         """
         ira_ytd = self._ira_ytd()
-        ira_remaining = max(0, IRA_ANNUAL_LIMIT - ira_ytd)
+        ira_remaining = max(0, portfolio_config.IRA_ANNUAL_LIMIT - ira_ytd)
         months_left = 12 - date.today().month + 1
         ira_monthly_needed = ira_remaining / months_left if months_left > 0 else 0
 
@@ -56,20 +44,20 @@ class StrategyAdvisor:
             allocations.append({
                 "destination": "Traditional IRA",
                 "amount": ira_alloc,
-                "reason": f"Tax-advantaged; ${ira_remaining:,.0f} left to max ${IRA_ANNUAL_LIMIT:,} limit",
-                "effective_rate": f"~{ASSUMED_MARKET_RETURN*100:.0f}% expected + tax deferral",
+                "reason": f"Tax-advantaged; ${ira_remaining:,.0f} left to max ${portfolio_config.IRA_ANNUAL_LIMIT:,} limit",
+                "effective_rate": f"~{portfolio_config.ASSUMED_MARKET_RETURN*100:.0f}% expected + tax deferral",
                 "priority": 1,
             })
             remaining -= ira_alloc
 
         # 2. Car payoff
-        if remaining > 0 and CAR_BALANCE > 0:
-            car_alloc = min(remaining, CAR_BALANCE / 12)  # Don't over-allocate
+        if remaining > 0 and portfolio_config.CAR_BALANCE > 0:
+            car_alloc = min(remaining, portfolio_config.CAR_BALANCE / 12)  # Don't over-allocate
             allocations.append({
                 "destination": "Extra car payment",
                 "amount": car_alloc,
-                "reason": f"5.49% guaranteed return; ${CAR_BALANCE:,.0f} remaining",
-                "effective_rate": f"{CAR_LOAN_RATE*100:.2f}% guaranteed",
+                "reason": f"5.49% guaranteed return; ${portfolio_config.CAR_BALANCE:,.0f} remaining",
+                "effective_rate": f"{portfolio_config.CAR_LOAN_RATE*100:.2f}% guaranteed",
                 "priority": 2,
             })
             remaining -= car_alloc
@@ -82,8 +70,8 @@ class StrategyAdvisor:
             allocations.append({
                 "destination": "Index fund investing",
                 "amount": invest_alloc,
-                "reason": f"Expected ~{ASSUMED_MARKET_RETURN*100:.0f}% long-term return",
-                "effective_rate": f"~{ASSUMED_MARKET_RETURN*100:.0f}% expected (variable)",
+                "reason": f"Expected ~{portfolio_config.ASSUMED_MARKET_RETURN*100:.0f}% long-term return",
+                "effective_rate": f"~{portfolio_config.ASSUMED_MARKET_RETURN*100:.0f}% expected (variable)",
                 "priority": 3,
             })
 
@@ -92,8 +80,8 @@ class StrategyAdvisor:
                 allocations.append({
                     "destination": "Extra mortgage principal",
                     "amount": mortgage_alloc,
-                    "reason": f"3.625% guaranteed; ${MORTGAGE_BALANCE:,.0f} remaining",
-                    "effective_rate": f"{MORTGAGE_RATE*100:.3f}% guaranteed",
+                    "reason": f"3.625% guaranteed; ${portfolio_config.MORTGAGE_BALANCE:,.0f} remaining",
+                    "effective_rate": f"{portfolio_config.MORTGAGE_RATE*100:.3f}% guaranteed",
                     "priority": 4,
                 })
 
@@ -103,7 +91,7 @@ class StrategyAdvisor:
         if ira_alloc > 0:
             sleep_well.append({"destination": "Traditional IRA", "amount": ira_alloc})
             sw_remaining -= ira_alloc
-        if sw_remaining > 0 and CAR_BALANCE > 0:
+        if sw_remaining > 0 and portfolio_config.CAR_BALANCE > 0:
             sleep_well.append({"destination": "Extra car payment", "amount": sw_remaining})
         elif sw_remaining > 0:
             sleep_well.append({"destination": "Extra mortgage principal", "amount": sw_remaining})
@@ -120,33 +108,33 @@ class StrategyAdvisor:
     def debt_freedom_projection(self) -> dict:
         """Project payoff dates for car and mortgage."""
         # Car payoff
-        car_months_base = self._months_to_payoff(CAR_BALANCE, CAR_LOAN_RATE / 12, CAR_MONTHLY)
+        car_months_base = self._months_to_payoff(portfolio_config.CAR_BALANCE, portfolio_config.CAR_LOAN_RATE / 12, portfolio_config.CAR_MONTHLY)
 
         # What if we add $500/mo extra?
-        car_months_extra = self._months_to_payoff(CAR_BALANCE, CAR_LOAN_RATE / 12, CAR_MONTHLY + 500)
+        car_months_extra = self._months_to_payoff(portfolio_config.CAR_BALANCE, portfolio_config.CAR_LOAN_RATE / 12, portfolio_config.CAR_MONTHLY + 500)
 
         # Mortgage payoff
-        mort_months_base = self._months_to_payoff(MORTGAGE_BALANCE, MORTGAGE_RATE / 12, MORTGAGE_MONTHLY)
-        mort_months_extra = self._months_to_payoff(MORTGAGE_BALANCE, MORTGAGE_RATE / 12, MORTGAGE_MONTHLY + 500)
+        mort_months_base = self._months_to_payoff(portfolio_config.MORTGAGE_BALANCE, portfolio_config.MORTGAGE_RATE / 12, portfolio_config.MORTGAGE_MONTHLY)
+        mort_months_extra = self._months_to_payoff(portfolio_config.MORTGAGE_BALANCE, portfolio_config.MORTGAGE_RATE / 12, portfolio_config.MORTGAGE_MONTHLY + 500)
 
         # Total interest saved
-        car_interest_base = (CAR_MONTHLY * car_months_base) - CAR_BALANCE if car_months_base else 0
-        car_interest_extra = ((CAR_MONTHLY + 500) * car_months_extra) - CAR_BALANCE if car_months_extra else 0
+        car_interest_base = (portfolio_config.CAR_MONTHLY * car_months_base) - portfolio_config.CAR_BALANCE if car_months_base else 0
+        car_interest_extra = ((portfolio_config.CAR_MONTHLY + 500) * car_months_extra) - portfolio_config.CAR_BALANCE if car_months_extra else 0
         car_interest_saved = car_interest_base - car_interest_extra
 
         return {
             "car": {
-                "balance": CAR_BALANCE,
-                "rate": CAR_LOAN_RATE,
-                "monthly_payment": CAR_MONTHLY,
+                "balance": portfolio_config.CAR_BALANCE,
+                "rate": portfolio_config.CAR_LOAN_RATE,
+                "monthly_payment": portfolio_config.CAR_MONTHLY,
                 "months_remaining": car_months_base,
                 "months_with_extra_500": car_months_extra,
                 "interest_saved_with_extra": car_interest_saved,
             },
             "mortgage": {
-                "balance": MORTGAGE_BALANCE,
-                "rate": MORTGAGE_RATE,
-                "monthly_payment": MORTGAGE_MONTHLY,
+                "balance": portfolio_config.MORTGAGE_BALANCE,
+                "rate": portfolio_config.MORTGAGE_RATE,
+                "monthly_payment": portfolio_config.MORTGAGE_MONTHLY,
                 "months_remaining": mort_months_base,
                 "months_with_extra_500": mort_months_extra,
             },
@@ -155,14 +143,14 @@ class StrategyAdvisor:
     def ira_contribution_tracker(self) -> dict:
         """YTD IRA contributions vs annual limit."""
         ira_ytd = self._ira_ytd()
-        remaining = max(0, IRA_ANNUAL_LIMIT - ira_ytd)
+        remaining = max(0, portfolio_config.IRA_ANNUAL_LIMIT - ira_ytd)
         months_left = 12 - date.today().month + 1
         monthly_needed = remaining / months_left if months_left > 0 else 0
-        pct_complete = (ira_ytd / IRA_ANNUAL_LIMIT * 100) if IRA_ANNUAL_LIMIT > 0 else 0
+        pct_complete = (ira_ytd / portfolio_config.IRA_ANNUAL_LIMIT * 100) if portfolio_config.IRA_ANNUAL_LIMIT > 0 else 0
 
         return {
             "ytd_contributions": ira_ytd,
-            "annual_limit": IRA_ANNUAL_LIMIT,
+            "annual_limit": portfolio_config.IRA_ANNUAL_LIMIT,
             "remaining": remaining,
             "pct_complete": pct_complete,
             "months_left": months_left,

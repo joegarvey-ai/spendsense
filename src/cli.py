@@ -10,10 +10,7 @@ from pathlib import Path
 
 import click
 
-# Add project root to path so config/src imports work
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from config.settings import DB_PATH, DEFAULT_SYNC_DAYS, EXCEL_PATH
+from config.loader import settings
 from src.categorize import TransactionCategorizer
 from src.db import (
     apply_override,
@@ -44,10 +41,12 @@ def cli():
 
 
 @cli.command()
-@click.option("--days", default=DEFAULT_SYNC_DAYS, help="Days of history to fetch (max 90).")
+@click.option("--days", default=None, type=int, help="Days of history to fetch (max 90). Default: 30.")
 @click.option("--no-excel", is_flag=True, help="Skip Excel dashboard update.")
 def sync(days, no_excel):
     """Pull transactions from SimpleFIN, categorize, and store."""
+    if days is None:
+        days = settings.DEFAULT_SYNC_DAYS
     click.echo(f"Starting sync (last {days} days)...")
     try:
         result = run_daily_sync(days_back=days, update_excel=not no_excel)
@@ -178,8 +177,8 @@ def status():
         click.echo("\nNo accounts synced yet.")
 
     # DB info
-    click.echo(f"\nDatabase: {DB_PATH}")
-    click.echo(f"Excel: {EXCEL_PATH}")
+    click.echo(f"\nDatabase: {settings.DB_PATH}")
+    click.echo(f"Excel: {settings.EXCEL_PATH}")
 
     conn.close()
 
@@ -245,7 +244,7 @@ def export_cmd(month):
         click.echo(f"  {t1 + ' / ' + t2:<30} {row['count']:>5} ${row['total']:>9.2f}")
 
     # Update Excel
-    click.echo(f"\nUpdating Excel dashboard at {EXCEL_PATH}...")
+    click.echo(f"\nUpdating Excel dashboard at {settings.EXCEL_PATH}...")
     update_dashboard(conn)
     click.echo("Done.")
 
@@ -442,12 +441,12 @@ def portfolio_import(csv_file):
 @portfolio.command(name="init-from-dividends")
 def portfolio_init_dividends():
     """Build preliminary holdings from dividend transaction history."""
-    from config.portfolio_config import KNOWN_TICKERS
+    from config.loader import portfolio_config
     from src.brokerage_import import build_holdings_from_dividends
 
     init_db()
     conn = get_connection()
-    result = build_holdings_from_dividends(conn, KNOWN_TICKERS)
+    result = build_holdings_from_dividends(conn, portfolio_config.KNOWN_TICKERS)
     conn.close()
     click.echo(f"Created {result['created']} holdings from dividend history ({result['already_exists']} already existed)")
     click.echo("⚠ Share counts are 0 — update manually or import CSV when available")

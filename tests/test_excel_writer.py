@@ -1,10 +1,7 @@
 """Tests for the Excel writer, focusing on the override round-trip."""
 
-import sys
 import tempfile
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from openpyxl import Workbook
 
@@ -140,6 +137,113 @@ def test_override_flag_not_set_skips_row():
         assert txn["vendor"] == "Some Store"
 
         conn.close()
+
+
+# ─── Formula generation tests ───
+
+from src.excel_writer import (
+    _build_formula,
+    _sumifs_spend,
+    _sumifs_alloc,
+    _sumifs_income,
+    _sumifs_income_other,
+    _needs_row_insertion,
+)
+
+
+def test_sumifs_spend_single_tier2():
+    """Spend formula for a single tier2 category."""
+    result = _sumifs_spend(["Groceries"], "C")
+    assert result.startswith("=-")
+    assert '"Groceries"' in result
+    assert "C$3" in result
+
+
+def test_sumifs_spend_multiple_tier2s():
+    """Spend formula joins multiple tier2 categories with subtraction."""
+    result = _sumifs_spend(["Dining Out", "Food Delivery"], "D")
+    assert result.count("SUMIFS") == 2
+    assert '"Dining Out"' in result
+    assert '"Food Delivery"' in result
+
+
+def test_sumifs_spend_empty_tier2_returns_zero():
+    """Empty tier2 list should produce =0."""
+    result = _sumifs_spend([], "C")
+    assert result == "=0"
+
+
+def test_sumifs_alloc_formula():
+    """Alloc formula references tier1=Allocation."""
+    result = _sumifs_alloc(["Savings"], "E")
+    assert '"Allocation"' in result
+    assert '"Savings"' in result
+
+
+def test_sumifs_income_formula():
+    """Income formula references tier1=Income, tier2=Payroll."""
+    result = _sumifs_income("C")
+    assert '"Income"' in result
+    assert '"Payroll"' in result
+
+
+def test_sumifs_income_other_formula():
+    """Income-other subtracts Payroll from total Income."""
+    result = _sumifs_income_other("F")
+    assert result.count("SUMIFS") == 2
+    assert '"Income"' in result
+    assert '"Payroll"' in result
+
+
+def test_build_formula_sum_type():
+    """Sum type produces SUM(col+first:col+last)."""
+    result = _build_formula({"type": "sum", "first": 12, "last": 17}, "C")
+    assert result == "=SUM(C12:C17)"
+
+
+def test_build_formula_ref_type():
+    """Ref type produces =col+row."""
+    result = _build_formula({"type": "ref", "row": 8}, "D")
+    assert result == "=D8"
+
+
+def test_build_formula_template():
+    """Formula type replaces {col} placeholder."""
+    result = _build_formula(
+        {"type": "formula", "template": "={col}71-{col}72"}, "G"
+    )
+    assert result == "=G71-G72"
+
+
+# ─── Row insertion detection ───
+
+def test_needs_row_insertion_false_when_rideshare():
+    """When B45 is already Rideshare, no insertion needed."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.cell(row=45, column=2, value="Rideshare")
+    assert _needs_row_insertion(ws) is False
+    wb.close()
+
+
+def test_needs_row_insertion_true_when_different():
+    """When B45 is something else, insertion IS needed."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.cell(row=45, column=2, value="Something Else")
+    assert _needs_row_insertion(ws) is True
+    wb.close()
+
+
+def test_needs_row_insertion_true_when_empty():
+    """When B45 is empty, insertion IS needed."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    assert _needs_row_insertion(ws) is True
+    wb.close()
 
 
 if __name__ == "__main__":

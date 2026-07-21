@@ -173,10 +173,11 @@ def build_holdings_from_dividends(conn: sqlite3.Connection, tickers: list[str]) 
         ).fetchone()
 
         # Try to determine account from the SimpleFIN account_id
-        from config.portfolio_config import BROKERAGE_ACCOUNTS
+        from config.loader import portfolio_config
+        brokerage_accounts = portfolio_config.BROKERAGE_ACCOUNTS
         account = "Individual"  # Default
-        if div_row and div_row["account_id"] in BROKERAGE_ACCOUNTS:
-            account = BROKERAGE_ACCOUNTS[div_row["account_id"]]
+        if div_row and div_row["account_id"] in brokerage_accounts:
+            account = brokerage_accounts[div_row["account_id"]]
 
         conn.execute(
             """INSERT INTO holdings (ticker, account, shares, avg_cost_basis, total_cost, estimated, notes, last_updated)

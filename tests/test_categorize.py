@@ -1,9 +1,9 @@
-"""Tests for the transaction categorization engine."""
+"""Tests for the transaction categorization engine.
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
+NOTE: These tests verify the shipped example categorization rules in config/categories.py.
+If you have customized categories.py for your own merchants (as the docstring recommends),
+some tests below may fail. This is expected; they test the default/example configuration.
+"""
 
 from src.categorize import TransactionCategorizer
 
