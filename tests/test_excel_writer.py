@@ -1,10 +1,7 @@
 """Tests for the Excel writer, focusing on the override round-trip."""
 
-import sys
 import tempfile
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from openpyxl import Workbook
 

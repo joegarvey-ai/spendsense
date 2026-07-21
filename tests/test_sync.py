@@ -1,12 +1,10 @@
 """Tests for the sync pipeline using mocked SimpleFIN responses."""
 
 import sqlite3
-import sys
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.db import get_connection, get_transaction_count, init_db
 

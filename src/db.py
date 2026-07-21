@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from config.settings import DB_PATH
+from config.loader import settings
 
 SCHEMA = """
 -- Accounts linked via SimpleFIN
@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_balance_date ON balance_snapshots(snapshot_date);
 
 def get_connection(db_path: Path = None) -> sqlite3.Connection:
     """Get a SQLite connection with row factory enabled."""
-    path = db_path or DB_PATH
+    path = db_path or settings.DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         path.parent.chmod(0o700)

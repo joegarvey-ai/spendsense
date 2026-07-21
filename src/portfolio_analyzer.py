@@ -6,7 +6,7 @@ import logging
 import sqlite3
 from datetime import datetime, date
 
-from config.portfolio_config import CONCENTRATION_WARN_PCT
+from config.loader import portfolio_config
 from src.market_data import MarketDataService
 
 logger = logging.getLogger(__name__)
@@ -113,11 +113,11 @@ class PortfolioAnalyzer:
         # Concentration risk
         concentration_alerts = []
         for h in holdings:
-            if h["weight_pct"] > CONCENTRATION_WARN_PCT * 100:
+            if h["weight_pct"] > portfolio_config.CONCENTRATION_WARN_PCT * 100:
                 concentration_alerts.append({
                     "ticker": h["ticker"],
                     "weight_pct": h["weight_pct"],
-                    "risk": f"HIGH — single stock > {CONCENTRATION_WARN_PCT*100:.0f}% of portfolio",
+                    "risk": f"HIGH — single stock > {portfolio_config.CONCENTRATION_WARN_PCT*100:.0f}% of portfolio",
                 })
 
         return {

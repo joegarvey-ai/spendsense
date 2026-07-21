@@ -18,20 +18,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from config.settings import DB_PATH
-except ImportError:
-    print("Error: config/settings.py not found.")
-    print("Copy config/settings.example.py to config/settings.py and fill in your values.")
-    sys.exit(1)
-
+from config.loader import settings
 from src.categorize import TransactionCategorizer
 from src.db import get_connection, init_db
 
 
 def main():
-    if not DB_PATH.exists():
-        print(f"Database not found at {DB_PATH}. Nothing to repair.")
+    if not settings.DB_PATH.exists():
+        print(f"Database not found at {settings.DB_PATH}. Nothing to repair.")
         sys.exit(0)
 
     conn = get_connection()

@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from config.settings import EXCEL_PATH
+from config.loader import settings
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +434,7 @@ def _write_transaction_log(wb, conn: sqlite3.Connection) -> int:
     ).fetchall()
 
     # Load account names
-    from config.settings import ACCOUNT_MAP
+    account_map = settings.ACCOUNT_MAP
     accounts_db = {}
     for row in conn.execute("SELECT id, institution, name FROM accounts").fetchall():
         accounts_db[row["id"]] = f"{row['institution']} — {row['name']}"
@@ -452,7 +452,7 @@ def _write_transaction_log(wb, conn: sqlite3.Connection) -> int:
         txn_id = row_data["id"]
         auto_cat = row_data["auto_categorized"]
 
-        acct_name = ACCOUNT_MAP.get(account_id, {}).get("name", "")
+        acct_name = account_map.get(account_id, {}).get("name", "")
         if not acct_name:
             acct_name = accounts_db.get(account_id, account_id[:30])
 
@@ -510,7 +510,7 @@ def read_overrides_from_excel(
     """
     from src.db import apply_override
 
-    path = excel_path or EXCEL_PATH
+    path = excel_path or settings.EXCEL_PATH
     if not path.exists():
         return 0
 
@@ -562,7 +562,7 @@ def update_dashboard(
     5. Apply formatting
     6. Populate Transaction Log with all transactions
     """
-    path = excel_path or EXCEL_PATH
+    path = excel_path or settings.EXCEL_PATH
     if not path.exists():
         logger.warning("Excel file not found at %s — skipping dashboard update", path)
         return

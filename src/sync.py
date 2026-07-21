@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from config.accounts import get_account_type, get_friendly_name
-from config.settings import SIMPLEFIN_BASE_URL, SIMPLEFIN_PASSWORD, SIMPLEFIN_USERNAME
+from config.loader import settings
 from src.categorize import TransactionCategorizer
 from src.db import (
     complete_sync_log,
@@ -124,7 +124,7 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
     Returns:
         Dict with sync results.
     """
-    if not SIMPLEFIN_USERNAME or not SIMPLEFIN_PASSWORD:
+    if not settings.SIMPLEFIN_USERNAME or not settings.SIMPLEFIN_PASSWORD:
         raise ValueError(
             "SimpleFIN credentials not configured. "
             "Run `python scripts/setup_simplefin.py` first, or set SIMPLEFIN_USERNAME "
@@ -137,7 +137,9 @@ def run_daily_sync(days_back: int = 30, update_excel: bool = True) -> dict:
     log_id = create_sync_log(conn, "daily")
     categorizer = TransactionCategorizer()
     overrides = get_overrides(conn)
-    client = SimpleFINClient(SIMPLEFIN_USERNAME, SIMPLEFIN_PASSWORD, SIMPLEFIN_BASE_URL)
+    client = SimpleFINClient(
+        settings.SIMPLEFIN_USERNAME, settings.SIMPLEFIN_PASSWORD, settings.SIMPLEFIN_BASE_URL
+    )
 
     errors = []
     fetched = 0

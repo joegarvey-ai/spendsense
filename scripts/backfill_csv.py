@@ -12,12 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.settings import CSV_IMPORT_DIR
+from config.loader import settings
 from src.cli import cli
 
 
 def main():
-    csv_dir = CSV_IMPORT_DIR
+    csv_dir = settings.CSV_IMPORT_DIR
     if not csv_dir.exists():
         print(f"CSV import directory not found: {csv_dir}")
         print("Create it and drop your CSV exports there.")

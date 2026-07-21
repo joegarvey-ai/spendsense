@@ -8,7 +8,7 @@ from datetime import datetime, date
 
 import yfinance as yf
 
-from config.portfolio_config import BENCHMARKS
+from config.loader import portfolio_config
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class MarketDataService:
         Returns number of data points stored.
         """
         total = 0
-        for name, ticker in BENCHMARKS.items():
+        for name, ticker in portfolio_config.BENCHMARKS.items():
             try:
                 t = yf.Ticker(ticker)
                 hist = t.history(period=period)
@@ -129,7 +129,7 @@ class MarketDataService:
         Returns list of {name, ticker, price, change_pct} for major indices.
         """
         results = []
-        tickers_to_fetch = list(BENCHMARKS.values())
+        tickers_to_fetch = list(portfolio_config.BENCHMARKS.values())
 
         try:
             data = yf.Tickers(" ".join(tickers_to_fetch))
@@ -137,7 +137,7 @@ class MarketDataService:
             logger.error("Market summary fetch failed: %s", e)
             return results
 
-        for name, ticker in BENCHMARKS.items():
+        for name, ticker in portfolio_config.BENCHMARKS.items():
             try:
                 info = data.tickers[ticker].info
                 price = info.get("regularMarketPrice") or info.get("currentPrice") or 0
